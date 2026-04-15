@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enrichment</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #f5f5f7;
+  --surface: #ffffff;
+  --border:  #e4e4ea;
+  --text:    #111118;
+  --dim:     #8888a2;
+  --accent:  #5b5fc7;
+  --green:   #16a34a;
+  --yellow:  #d97706;
+  --red:     #dc2626;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Canvas ───────────────────────────────────────────── */
+
+.canvas {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60px 20px 160px;
+}
+
+/* Empty state */
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 60vh;
+  transition: opacity 0.25s ease;
+}
+.empty.gone { display: none; }
+.empty-h { font-size: 18px; font-weight: 600; color: var(--dim); letter-spacing: -0.02em; }
+.empty-s { font-size: 13px; color: var(--dim); opacity: 0.55; }
+
+/* Status / loading */
+#status {
+  width: 100%;
+  max-width: 680px;
+  text-align: center;
+  color: var(--dim);
+  font-size: 13px;
+  padding: 10px 0;
+  display: none;
+}
+#status.on { display: block; }
+
+.spin-row { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.spin {
+  width: 13px; height: 13px;
+  border: 1.5px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Result cards ─────────────────────────────────────── */
+
+#results {
+  width: 100%;
+  max-width: 680px;
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+#results.on { display: flex; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 22px;
+  opacity: 0;
+  animation: fadeUp 0.4s ease forwards;
+}
+.card:nth-child(1) { animation-delay: 0.00s; }
+.card:nth-child(2) { animation-delay: 0.05s; }
+.card:nth-child(3) { animation-delay: 0.10s; }
+.card:nth-child(4) { animation-delay: 0.15s; }
+.card:nth-child(5) { animation-delay: 0.20s; }
+.card:nth-child(6) { animation-delay: 0.25s; }
+
+.clabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 14px;
+}
+
+/* Row layout */
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 520px) { .row2 { grid-template-columns: 1fr; } }
+
+/* Contact card */
+.c-name { font-size: 22px; font-weight: 700; letter-spacing: -0.025em; margin-bottom: 3px; }
+.c-sub  { font-size: 13px; color: var(--dim); margin-bottom: 16px; }
+.kv { display: grid; grid-template-columns: 72px 1fr; gap: 5px 0; }
+.kk { font-size: 12px; color: var(--dim); line-height: 1.7; }
+.vv { font-size: 12px; color: var(--text); line-height: 1.7; word-break: break-all; }
+.vv a { color: var(--accent); text-decoration: none; }
+
+/* ICP card */
+.icp-num { font-size: 40px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+.icp-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.badge {
+  font-size: 11px; font-weight: 700;
+  padding: 3px 9px; border-radius: 6px;
+  display: inline-flex; align-items: center;
+}
+.A { background: rgba(22,163,74,.10);  color: var(--green);  }
+.B { background: rgba(217,119,6,.10);  color: var(--yellow); }
+.C { background: rgba(220,38,38,.10);  color: var(--red);    }
+.icp-act { font-size: 13px; color: var(--dim); line-height: 1.6; }
+
+/* Company card */
+.stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 16px; }
+.s-num { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }
+.s-key { font-size: 11px; color: var(--dim); margin-top: 2px; }
+.pills { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 13px; }
+.pill {
+  font-size: 11px; padding: 3px 9px; border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--border); color: var(--dim);
+}
+.signals { display: flex; flex-direction: column; gap: 5px; }
+.sig { display: flex; gap: 8px; font-size: 12px; color: var(--dim); }
+.sig::before { content: '›'; color: var(--accent); flex-shrink: 0; }
+
+/* CRM */
+.crm-badge { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; margin-bottom: 12px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.dy { background: var(--green); }
+.dn { background: var(--red);   }
+
+/* Next steps */
+.steps { display: flex; flex-direction: column; gap: 9px; }
+.step  { display: flex; gap: 10px; align-items: flex-start; }
+.step-n {
+  width: 20px; height: 20px; border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: var(--dim);
+  flex-shrink: 0; margin-top: 2px;
+}
+.step-t { font-size: 13px; color: var(--dim); line-height: 1.6; }
+
+/* Web research */
+.web { font-size: 13px; color: var(--dim); line-height: 1.75; }
+.web-news {
+  font-size: 12px; color: var(--dim); opacity: 0.7;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--border);
+  line-height: 1.6;
+}
+
+/* Error */
+.error {
+  background: rgba(248,113,113,.06);
+  border: 1px solid rgba(248,113,113,.2);
+  border-radius: 14px;
+  padding: 20px 22px;
+  color: var(--red);
+  font-size: 13px;
+  line-height: 1.6;
+  animation: fadeUp 0.3s ease forwards;
+}
+
+/* ── Search dock ───────────────────────────────────────── */
+
+.dock {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  padding: 48px 20px 34px;
+  background: linear-gradient(to bottom, transparent, var(--bg) 38%);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.dock > * { pointer-events: auto; }
+
+.pill-form {
+  width: 100%;
+  max-width: 580px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  padding: 6px 6px 6px 22px;
+  box-shadow:
+    0 10px 40px rgba(0,0,0,0.10),
+    0 3px 10px rgba(0,0,0,0.06);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.pill-form:focus-within {
+  border-color: rgba(91,95,199,0.35);
+  box-shadow:
+    0 10px 40px rgba(0,0,0,0.10),
+    0 3px 10px rgba(0,0,0,0.06),
+    0 0 0 3px rgba(91,95,199,0.10);
+}
+
+.pill-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 15px;
+  outline: none;
+  min-width: 0;
+}
+.pill-input::placeholder { color: var(--dim); }
+
+.pill-btn {
+  background: var(--accent);
+  border: none;
+  border-radius: 9999px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  height: 36px;
+  padding: 0 20px;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+.pill-btn:hover:not(:disabled) { opacity: 0.85; }
+.pill-btn:active:not(:disabled) { transform: scale(0.96); }
+.pill-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<div class="canvas">
+  <div class="empty" id="empty">
+    <div class="empty-h">Sales intelligence</div>
+    <div class="empty-s">Search for any prospect below</div>
+  </div>
+
+  <div id="status"></div>
+  <div id="results"></div>
+</div>
+
+<div class="dock">
+  <form class="pill-form" id="form" autocomplete="off">
+    <input
+      class="pill-input"
+      id="query"
+      type="text"
+      placeholder="Research someone"
+      autocomplete="off"
+      spellcheck="false"
+    >
+    <button class="pill-btn" id="btn" type="submit">Search</button>
+  </form>
+</div>
+
+<script>
+const $  = id => document.getElementById(id);
+const st = $('status');
+const re = $('results');
+
+function fmtUSD(n) {
+  if (!n) return '—';
+  if (n >= 1e9) return '$' + (n/1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return '$' + (n/1e3).toFixed(0) + 'K';
+  return '$' + n;
+}
+function fmtNum(n) {
+  if (!n) return '—';
+  if (n >= 1000) return (n/1000).toFixed(n >= 10000 ? 0 : 1) + 'k+';
+  return '' + n;
+}
+
+function setStatus(html) {
+  st.innerHTML = html;
+  st.className = html ? 'on' : '';
+}
+
+function renderError(msg) {
+  re.innerHTML = `<div class="error">${msg}</div>`;
+  re.className = 'on';
+}
+
+function renderReport(d) {
+  const c  = d.contact          || {};
+  const cp = d.company_profile  || {};
+  const cr = d.crm_status       || {};
+  const ic = d.icp              || {};
+  const ws = d.web_research_summary || '';
+  const grade = ic.grade || 'C';
+
+  const liHtml = c.linkedin_url
+    ? `<a href="${c.linkedin_url}" target="_blank">${c.linkedin_url.replace(/^https?:\/\/(www\.)?/,'')}</a>`
+    : '—';
+
+  const techPills = (cp.tech_stack || []).map(t => `<span class="pill">${t}</span>`).join('');
+  const sigs = (cp.icp_signals || []).map(s => `<div class="sig">${s}</div>`).join('');
+  const steps = (ic.next_steps || []).map((s, i) =>
+    `<div class="step"><div class="step-n">${i+1}</div><div class="step-t">${s}</div></div>`
+  ).join('');
+
+  re.innerHTML = `
+
+    <div class="row2">
+      <div class="card">
+        <div class="clabel">Contact</div>
+        <div class="c-name">${c.name || '—'}</div>
+        <div class="c-sub">${[c.title, c.company].filter(Boolean).join(' · ') || '—'}</div>
+        <div class="kv">
+          <span class="kk">Email</span>    <span class="vv">${c.email || '—'}</span>
+          <span class="kk">Seniority</span><span class="vv">${c.seniority || '—'}</span>
+          <span class="kk">LinkedIn</span> <span class="vv">${liHtml}</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="clabel">ICP Score</div>
+        <div class="icp-row">
+          <div class="icp-num">${(ic.score||0).toFixed(1)}</div>
+          <div class="badge ${grade}">Grade ${grade}</div>
+        </div>
+        <div class="icp-act">${ic.recommended_action || ''}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="clabel">Company — ${cp.industry || ''}</div>
+      <div class="stats">
+        <div><div class="s-num">${fmtNum(cp.headcount)}</div><div class="s-key">Headcount</div></div>
+        <div><div class="s-num">${fmtUSD(cp.arr_estimate_usd)}</div><div class="s-key">ARR estimate</div></div>
+        <div><div class="s-num">${cp.funding_stage || '—'}</div><div class="s-key">Stage</div></div>
+      </div>
+      ${techPills ? `<div class="pills">${techPills}</div>` : ''}
+      ${sigs ? `<div class="signals">${sigs}</div>` : ''}
+    </div>
+
+    <div class="row2">
+      <div class="card">
+        <div class="clabel">CRM Status</div>
+        <div class="crm-badge">
+          <div class="dot ${cr.found ? 'dy' : 'dn'}"></div>
+          ${cr.found ? 'Found in Salesforce' : 'Not in CRM'}
+        </div>
+        ${cr.found ? `<div class="kv">
+          <span class="kk">ID</span>       <span class="vv">${cr.contact_id || '—'}</span>
+          <span class="kk">Stage</span>    <span class="vv">${cr.deal_stage || '—'}</span>
+          <span class="kk">Value</span>    <span class="vv">${fmtUSD(cr.deal_value_usd)}</span>
+          <span class="kk">Assigned</span> <span class="vv">${cr.assigned_rep || '—'}</span>
+          <span class="kk">Last act.</span><span class="vv">${cr.last_activity_days_ago != null ? cr.last_activity_days_ago + 'd ago' : '—'}</span>
+          ${cr.notes ? `<span class="kk">Notes</span><span class="vv">${cr.notes}</span>` : ''}
+        </div>` : `<div style="font-size:12px;color:var(--dim)">No record — recommend creating a new lead.</div>`}
+      </div>
+
+      <div class="card">
+        <div class="clabel">Web Research</div>
+        <div class="web">${ws || 'No web research data.'}</div>
+        ${cp.recent_news ? `<div class="web-news">${cp.recent_news}</div>` : ''}
+      </div>
+    </div>
+
+    ${steps ? `<div class="card">
+      <div class="clabel">Next Steps</div>
+      <div class="steps">${steps}</div>
+    </div>` : ''}
+
+  `;
+
+  re.className = 'on';
+}
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const q = $('query').value.trim();
+  if (!q) return;
+
+  const btn = $('btn');
+  btn.disabled = true;
+  $('empty').classList.add('gone');
+  re.className = '';
+  re.innerHTML = '';
+  setStatus(`<div class="spin-row"><div class="spin"></div>Researching…</div>`);
+
+  try {
+    const res = await fetch('/enrich', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: q }),
+    });
+    setStatus('');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      renderError(err.detail || 'Enrichment failed. Check server logs.');
+    } else {
+      renderReport(await res.json());
+    }
+  } catch (err) {
+    setStatus('');
+    renderError('Network error: ' + err.message);
+  }
+
+  btn.disabled = false;
+});
+</script>
+</body>
+</html>

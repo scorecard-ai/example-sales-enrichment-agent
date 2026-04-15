@@ -33,6 +33,16 @@ You are a sales intelligence agent for a B2B SaaS company. \
 Your goal is to build a comprehensive lead enrichment profile that helps \
 the sales team prioritise and personalise their outreach.
 
+The prospect input may be structured (name/company/domain/role) or a free-form \
+string such as "Sarah Chen VP of Eng at Databricks", or it may be just a name. \
+Parse it to extract whatever you can. If company or role are missing, use WebSearch \
+(step 1) to discover them — search for the name and infer employer and title from \
+results. Never stop, never ask for clarification, never return prose.
+
+CRITICAL OUTPUT RULE: Your response MUST be a single JSON object and nothing else. \
+No markdown, no explanation, no apologies. If a field cannot be determined, use null. \
+Violating this rule (returning any text outside the JSON) is a critical failure.
+
 For every prospect you receive, you MUST call ALL SIX of the following tools \
 in the order listed. Do not skip any tool, even if an earlier call returns \
 "not found".
@@ -177,19 +187,26 @@ async def run_enrichment_agent(inputs: dict, otel_link_id: str) -> dict:
         claude CLI subprocess env as scorecard.otel_link_id so Scorecard can
         merge the trace spans into the corresponding SDK record.
     """
-    name = inputs.get("name", "Unknown")
-    company = inputs.get("company", "")
-    domain = inputs.get("domain", "")
-    role_hint = inputs.get("role_hint", "")
-
-    prompt = (
-        f"Please enrich this sales prospect:\n\n"
-        f"**Name**: {name}\n"
-        f"**Company**: {company or '(unknown)'}\n"
-        f"**Company Domain**: {domain or '(unknown)'}\n"
-        f"**Role Hint**: {role_hint or '(unknown)'}\n\n"
-        f"Use all six tools in order and produce the enrichment report."
-    )
+    if "query" in inputs and inputs["query"]:
+        prompt = (
+            f"Enrich this prospect: \"{inputs['query']}\"\n\n"
+            f"If company or domain are not specified, use WebSearch first to identify them, "
+            f"then proceed through all six tools in order. "
+            f"Return only the JSON object — no other text."
+        )
+    else:
+        name = inputs.get("name", "Unknown")
+        company = inputs.get("company", "")
+        domain = inputs.get("domain", "")
+        role_hint = inputs.get("role_hint", "")
+        prompt = (
+            f"Please enrich this sales prospect:\n\n"
+            f"**Name**: {name}\n"
+            f"**Company**: {company or '(unknown)'}\n"
+            f"**Company Domain**: {domain or '(unknown)'}\n"
+            f"**Role Hint**: {role_hint or '(unknown)'}\n\n"
+            f"Use all six tools in order and produce the enrichment report."
+        )
 
     project_id = os.environ.get("SCORECARD_PROJECT_ID", "")
 
@@ -226,11 +243,28 @@ async def run_enrichment_agent(inputs: dict, otel_link_id: str) -> dict:
                     if isinstance(block, TextBlock):
                         final_text = block.text
 
-    # Parse the structured JSON response
-    try:
-        structured = json.loads(final_text)
-    except (json.JSONDecodeError, TypeError):
-        # Fallback: wrap raw text if the model didn't return valid JSON
-        structured = {"enrichment_report": final_text}
+    print(f"[agent] response type={type(final_text).__name__}, preview={str(final_text)[:200]!r}")
 
-    return structured
+    # The SDK may return a pre-parsed dict when output_format is set
+    if isinstance(final_text, dict):
+        return final_text
+
+    if not final_text:
+        raise ValueError("Agent returned an empty response")
+
+    # Try direct JSON parse
+    try:
+        return json.loads(final_text)
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Try to extract a JSON object embedded in prose
+    import re
+    m = re.search(r'\{[\s\S]*\}', final_text)
+    if m:
+        try:
+            return json.loads(m.group())
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    raise ValueError(f"Could not parse agent response as JSON: {final_text[:300]}")

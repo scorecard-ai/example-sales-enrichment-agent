@@ -6,23 +6,159 @@ intelligence DB, email discovery service, ICP scorer) but return realistic
 fake data seeded deterministically from the input so results are consistent
 across runs for the same person.
 
-Each tool is decorated with @tool so it can be registered with
-create_sdk_mcp_server and exposed to the Claude Agent SDK agent.
+For the demo prospect "Darius Emrani", two hardcoded database versions exist:
+  v1 (SALES_DB_VERSION=v1, the default): stale/wrong record → C grade
+  v2 (SALES_DB_VERSION=v2): correct, up-to-date record → A grade
+
+All other prospects fall through to the deterministic random logic.
 """
 import json
+import os
 import random
 
 from claude_agent_sdk import tool, create_sdk_mcp_server
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Database version ──────────────────────────────────────────────────────────
+# Set SALES_DB_VERSION=v2 in .env to switch to the corrected database.
+DB_VERSION = os.environ.get("SALES_DB_VERSION", "v1")
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _rng(seed_str: str) -> random.Random:
     """Deterministic RNG seeded from a string — same input always gives same data."""
     return random.Random(sum(ord(c) for c in seed_str.lower()))
 
+def _is_darius(name: str) -> bool:
+    n = name.lower()
+    return "darius" in n and "emrani" in n
 
-# ── Tool 1: CRM Lookup ───────────────────────────────────────────────────────
+def _is_scorecard(company: str) -> bool:
+    return "scorecard" in company.lower()
+
+
+# ── Darius Emrani / Scorecard fixtures ───────────────────────────────────────
+#
+# v1 — stale record: Darius is listed as a Senior IC at a tiny pre-seed startup.
+#      The scoring formula will naturally produce a C from this data.
+#
+# v2 — correct record: Darius is Founder & CEO of a Series A company.
+#      The scoring formula will naturally produce an A from this data.
+
+_DARIUS_LINKEDIN = {
+    "v1": {
+        "found": True,
+        "name": "Darius Emrani",
+        "current_title": "Software Engineer",
+        "company": "Scorecard",
+        "seniority": "Senior IC",
+        "location": "San Francisco Bay Area",
+        "connections": 341,
+        "years_at_company": 1,
+        "total_experience_years": 3,
+        "education": "UC Berkeley — BA Economics",
+        "top_skills": ["Python", "SQL", "API Design", "Product Management", "Startups"],
+        "recent_activity": "Liked a post about early-stage startup hiring",
+        "linkedin_url": "https://www.linkedin.com/in/darius-emrani-4812",
+        "_db_note": "[v1] Last synced 2024-06-01 — record may be outdated",
+    },
+    "v2": {
+        "found": True,
+        "name": "Darius Emrani",
+        "current_title": "Founder & CEO",
+        "company": "Scorecard",
+        "seniority": "C-Level / Founder",
+        "location": "San Francisco Bay Area",
+        "connections": 1840,
+        "years_at_company": 2,
+        "total_experience_years": 7,
+        "education": "UC Berkeley — BA Economics",
+        "top_skills": [
+            "Enterprise Sales", "B2B SaaS", "AI/ML Platforms",
+            "Go-to-Market", "Strategic Partnerships",
+        ],
+        "recent_activity": (
+            "Posted: 'Announcing Scorecard's Series A — we're building "
+            "the simulation platform for agent self-improvement'"
+        ),
+        "linkedin_url": "https://www.linkedin.com/in/darius-emrani-4812",
+        "_db_note": "[v2] Last synced 2026-04-01 — current",
+    },
+}
+
+_SCORECARD_COMPANY = {
+    "v1": {
+        "found": True,
+        "company_name": "Scorecard",
+        "industry": "Developer Tools / Infrastructure",
+        "headcount": 8,
+        "headcount_range": "8–12",
+        "arr_estimate_usd": 0,
+        "funding_stage": "Pre-Seed",
+        "latest_round": "Bootstrapped — 2024",
+        "total_funding_usd": 0,
+        "founded_year": 2024,
+        "hq_location": "San Francisco, CA",
+        "tech_stack": ["Python", "PostgreSQL", "AWS"],
+        "icp_signals": [],
+        "website": "https://www.scorecard.io",
+        "_db_note": "[v1] Stale record — data last refreshed 2024-06-01",
+    },
+    "v2": {
+        "found": True,
+        "company_name": "Scorecard",
+        "industry": "AI / Developer Tools",
+        "headcount": 85,
+        "headcount_range": "85–110",
+        "arr_estimate_usd": 12_000_000,
+        "funding_stage": "Series A",
+        "latest_round": "$18M Series A — 2025",
+        "total_funding_usd": 22_000_000,
+        "founded_year": 2023,
+        "hq_location": "San Francisco, CA",
+        "tech_stack": [
+            "Python", "TypeScript", "React", "AWS",
+            "PostgreSQL", "Kafka", "Kubernetes",
+        ],
+        "icp_signals": [
+            "Engineering headcount growing >35% YoY",
+            "Raised Series A in last 12 months — scaling GTM team",
+            "Active job postings for DevOps / Platform roles",
+            "Open source project with >2k GitHub stars",
+        ],
+        "website": "https://www.scorecard.io",
+        "_db_note": "[v2] Updated record — data last refreshed 2026-04-01",
+    },
+}
+
+_SCORECARD_CRM = {
+    "v1": {
+        "found": False,
+        "message": "No record found for 'Scorecard' in Salesforce.",
+        "recommendation": "Create a new lead record and enroll in an outbound sequence.",
+        "_db_note": "[v1] Account not yet in CRM",
+    },
+    "v2": {
+        "found": True,
+        "contact_id": "SF-089234",
+        "company": "Scorecard",
+        "email": "darius@scorecard.io",
+        "deal_stage": "Demo Scheduled",
+        "deal_value_usd": 95_000,
+        "assigned_rep": "carol.hayes@acme-sales.io",
+        "last_activity_days_ago": 4,
+        "notes": (
+            "Champion confirmed: Darius (CEO). Exec sponsor loop closed. "
+            "Strong intent — moving to proposal next week."
+        ),
+        "tags": ["enterprise", "hot_lead", "champion_identified"],
+        "_db_note": "[v2] Synced from enrichment pipeline — refreshed 2026-04-01",
+    },
+}
+
+
+# ── Tool 1: CRM Lookup ────────────────────────────────────────────────────────
 
 @tool(
     "crm_lookup",
@@ -36,6 +172,12 @@ def _rng(seed_str: str) -> random.Random:
 async def crm_lookup(args: dict) -> dict:
     company = args.get("company_name", "")
     email = args.get("contact_email", "")
+
+    # Darius / Scorecard fixture
+    if _is_scorecard(company) or (_is_darius(email.replace("@", " ").replace(".", " "))):
+        result = _SCORECARD_CRM[DB_VERSION]
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
     rng = _rng(company + email)
 
     if rng.random() < 0.28:
@@ -93,6 +235,12 @@ async def crm_lookup(args: dict) -> dict:
 async def linkedin_profile_lookup(args: dict) -> dict:
     name = args.get("full_name", "")
     company = args.get("company", "")
+
+    # Darius Emrani fixture
+    if _is_darius(name):
+        result = _DARIUS_LINKEDIN[DB_VERSION]
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
     rng = _rng(name + company)
 
     if rng.random() < 0.08:
@@ -164,6 +312,12 @@ async def linkedin_profile_lookup(args: dict) -> dict:
 )
 async def company_intel_lookup(args: dict) -> dict:
     company = args.get("company_name", "")
+
+    # Scorecard fixture
+    if _is_scorecard(company):
+        result = _SCORECARD_COMPANY[DB_VERSION]
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
     rng = _rng(company)
 
     if rng.random() < 0.07:
@@ -236,6 +390,20 @@ async def company_intel_lookup(args: dict) -> dict:
 async def email_finder(args: dict) -> dict:
     name = args.get("full_name", "")
     domain = args.get("company_domain", "").lstrip("@").strip()
+
+    # Darius always resolves cleanly regardless of DB version
+    if _is_darius(name):
+        result = {
+            "found": True,
+            "email": "darius@scorecard.io",
+            "confidence_pct": 99,
+            "confidence_label": "high",
+            "verification_status": "smtp_verified",
+            "data_sources": ["company_website_scrape", "linkedin_data_partner"],
+            "last_verified": "2026-04-01",
+        }
+        return {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}
+
     rng = _rng(name + domain)
 
     parts = name.lower().split()
@@ -280,6 +448,11 @@ async def email_finder(args: dict) -> dict:
 
 
 # ── Tool 5: Enrichment Score ──────────────────────────────────────────────────
+#
+# No fixture needed here — the score is computed from the data returned by the
+# previous four tools. With v1 data (Senior IC, 8 headcount, $0 ARR, 0 signals)
+# the formula naturally produces a C. With v2 data (Founder, 85 headcount,
+# $12M ARR, 4 signals) it naturally produces an A.
 
 @tool(
     "enrichment_score",
@@ -354,6 +527,10 @@ def create_sales_tools_server():
     """
     Create an in-process MCP server that exposes all five internal sales tools.
     Pass the returned server object to ClaudeAgentOptions(mcp_servers=...).
+
+    The active database version is read from SALES_DB_VERSION at import time:
+      v1 (default) — stale data, Darius Emrani scores C
+      v2            — correct data, Darius Emrani scores A
     """
     return create_sdk_mcp_server(
         "sales-tools",
