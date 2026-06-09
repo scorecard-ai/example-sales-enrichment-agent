@@ -40,6 +40,9 @@ jobs:
         env:
           SCORECARD_API_KEY: ${{ secrets.SCORECARD_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Optional override for the Scorecard API base URL (e.g. a tunnel to
+          # a local backend). Empty/unset falls back to the SDK's production URL.
+          SCORECARD_BASE_URL: ${{ vars.SCORECARD_BASE_URL }}
           # Scorecard config IDs
           # 1. Check if there's an input from manual trigger (workflow_dispatch)
           # 2. Fallback to values sent from external sources (repository_dispatch)
